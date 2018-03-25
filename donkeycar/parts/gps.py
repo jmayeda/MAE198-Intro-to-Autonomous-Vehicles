@@ -12,27 +12,23 @@ import pynmea2
 
 
 class GPS():
-    def __init__(self):
+    def __init__(self, baudRate, port, timeOut):
         # GPS coordinates used for controller
         self.currLocation = [0, 0]
         self.prevLocation = [0, 0]
 
         # GPS serial object
-        self.baudRate = 9600
-        self.port = '/dev/ttyS0'
-        self.timeOut = 1 # seconds
-
         self.gpsObj = serial.Serial(
-        	port     = self.port,
-        	baudrate = self.baudRate,
-        	timeout  = self.timeOut,
+        	port     = port,
+        	baudrate = baudRate,
+        	timeout  = timeOut,
         	parity   = serial.PARITY_NONE,
         	stopbits = serial.STOPBITS_ONE,
         	rtscts   = False,
         	xonxoff  = False,
         	dsrdtr   = False)
 
-        self.on = True  # part threading
+        self.on = True  # threading
 
     def poll(self):
         """
@@ -49,7 +45,7 @@ class GPS():
             self.prevLocation = self.currLocation
             currLocation = self.GPStoRad(gpsdata)
             self.currLocation = currLocation
-            print(self.currLocation)
+            # print(self.currLocation)
         else:
             # do nothing; don't need the other serial data
             pass
