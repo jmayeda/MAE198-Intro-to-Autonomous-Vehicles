@@ -14,57 +14,78 @@ class Planner():
     def __init__(self, goalLocation, steer_gain, throttle_gain):
 
         # TODO: calibrate the throttle and steering upper and lower bounds
+
         # Throttle controller
-        self.throttle_gain = throttle_gain
-        self.throttle_lower = 0
-        self.throttle_upper = 0.1
-        self.throttle_cmd = 0.01
+        self.throttle_gain = throttle_gain     # TODO: tune P throttle controller
+        self.throttle_lower = 0                # calibrate with DK actuator parts inputs
+        self.throttle_upper = 0.14             # calibrate with DK actuator parts inputs
+        self.throttle_cmd = 0.01               # throttle command to send to DC motor
 
         # Steering controller
-        self.steer_gain = steer_gain
-        self.steering_left = -1
-        self.steering_right = 1
-        self.steering_cmd = 0
-        self.bearing = 0
+        self.steer_gain = steer_gain           # TODO: add PID steering controller
+        self.steering_left = -1                # calibrate with DK actuator parts inputs
+        self.steering_right = 1                # calibrate with DK actuator parts inputs
+        self.steering_cmd = 0                  # steer command to send to servos
+        self.bearing = 0                       # current bearing error to goal [rad]
 
         # GPS location trackers
-        self.currLocation = [0, 0]
-        self.prevLocation = [0, 0]
-        self.goalLocation = goalLocation * pi/180 # convert from degrees to radians
-        # TODO: add waypoint navigation
-        self.distance = 100  # m
-        self.reachGoal = False
-        self.goalThreshold = 8 # m
-        self.goalWaitCounter = 0
-        self.goalWaitCounterThreshold = 100
+        self.numWaypoints = len(goalLocation)  # number of waypoints
+        self.currWaypoint = 0                  # waypoint index for goalLocation list
+        self.currLocation = [0, 0]             # current GPS lcoation; initialize at equator
+        self.prevLocation = [0, 0]             # previous time step GPS location; initialize at equator
+        self.goalLocation = [[x * pi/180 for x in y] for y in goalLocation] # convert from degrees to radians
+        self.distance = 100                    # tracks the distance to goal. initialize at 100m
+        self.reachGoal = False                 # flag to signify whether or not the goal was reached
+        self.goalThreshold = 15                # the setpoint threshold for distance to goal [m]
+        self.goalWaitCounter = 0               # counter for keeping track of waiting between waypoints
+        self.goalWaitCounterThreshold = 50     # maximum wait (counts) between waypoints
 
         # initialize a text file
-        # TODO: fix gps data file writing and reading
         self.textFile = open('gps_data.txt', 'w')
 
     def run(self, currLocation, prevLocation):
-        # if the car has reached the goal, drive in circle
-        if self.reachGoal == True:
+
+        # update the current and previous location from GPS part
+        self.currLocation = currLocation
+        self.prevLocation = prevLocation
+
+        # update the distance to goal
+        self.distance = self.update_distance()
+
+        # if the distance to goal reaches a threshold value, enter waypoint routine (go in circle)
+        if self.distance <= self.goalThreshold:# or self.reachGoal == True:
+            self.reachGoal = True
+            print("Reached waypoint!!")
+
+            # if the car has reached the goal, drive in circle
             self.throttle_cmd, self.steer_cmd = self.drive_in_circle()
 
             # while driving in circle, increment a counter
             self.goalWaitCounter += 1
 
             # once counter reaches a threshold value, reset reachGoal flag
-            # and continue on waypoints
+            # and continue on waypoints list
             if self.goalWaitCounter > self.goalWaitCounterThreshold:
-                self.reachGoal == False
+                self.reachGoal = False
+                self.currWaypoint += 1
                 self.goalWaitCounter = 0
+                self.distance = 100  # reset distance to an arbitrary distance
 
         else:
             # calculate steering and throttle as using controller
+            self.reachGoal = False
             self.steer_cmd = self.steering_controller(currLocation, prevLocation)
-            self.throttle_cmd, self.reachGoal = self.throttle_controller(currLocation)
+            self.throttle_cmd, self.reachGoal = self.throttle_controller(currLocation, prevLocation)
 
         # print updates
         self.print_process()
+
         # write to file
-        self.textFile.write("%s, %s\n" % (self.currLocation[0], self.currLocation[1]))
+        self.textFile.write("%s, %s;\n" % (self.currLocation[0], self.currLocation[1]))
+
+        # end
+        if self.currWaypoint == self.numWaypoints and self.reachGoal == True:
+            print("Done.")
 
         return self.steer_cmd, self.throttle_cmd
 
@@ -82,14 +103,11 @@ class Planner():
         @return: steering command
         """
         # TODO: add PID steering controller
-        self.currLocation = currLocation
-        self.prevLocation = prevLocation
-
         # Proportional controller
         bearingPrevToCurr = self.calc_bearing(self.prevLocation, self.currLocation)
-        bearingCurrToGoal = self.calc_bearing(self.currLocation, self.goalLocation)
+        bearingCurrToGoal = self.calc_bearing(self.currLocation, self.goalLocation[self.currWaypoint])
         self.bearing = bearingCurrToGoal - bearingPrevToCurr
-        self.steer_cmd = self.steer_gain * bearing
+        self.steer_cmd = self.steer_gain * self.bearing
 
         # hard limits
         if self.steering_cmd > self.steering_right:
@@ -99,25 +117,22 @@ class Planner():
 
         return self.steer_cmd
 
-    def throttle_controller(self, currLocation):
+    def update_distance(self):
         """
-        throttle_controller()
+        Method to update the distanc from current location to goal.
+        @params: currLocation, goalLocation
+        @return: distance [m]
+        """
+        self.distance = self.dist_between_gps_points(self.currLocation, self.goalLocation[self.currWaypoint])
 
+        return self.distance
+
+    def throttle_controller(self, currLocation, prevLocation):
+        """
         Method to implement a proportional controller for throttle for donkey car
-        Run steering controller first.
         @params:
         @return:
         """
-
-        # calculate distance
-        self.distance = self.dist_between_gps_points(self.currLocation, self.goalLocation)
-        # print("distance to goal (m): %f" % (self.distance))
-
-        # stop condition
-        if self.distance <= self.goalThreshold or self.reachGoal == True:
-            self.reachGoal = True
-            print("Reached goal!!")
-            return self.throttle_cmd, self.reachGoal
 
         # Proportional control
         self.throttle_cmd = self.throttle_gain * self.distance
@@ -138,7 +153,7 @@ class Planner():
         @return: throttle command, steering command
         """
         # go in a circle to the left at 0.75*max speed
-        self.throttle_cmd = self.throttle_upper * 0.75
+        self.throttle_cmd = self.throttle_upper
         self.steer_cmd = -1
         return self.throttle_cmd, self.steer_cmd
 
@@ -188,8 +203,8 @@ class Planner():
         dlat = lat2 - lat1  # change in latitude
         dlon = lon2 - lon1  # change in longitude
 
-        dx = r_earth*dlon*cos((lat1+lat2)/2)
-        dy = r_earth*dlat
+        dx = r_earth * dlon * cos((lat1+lat2)/2)
+        dy = r_earth * dlat
 
         dist = sqrt(square(dx)+square(dy))  # straight line approximation
 
@@ -203,10 +218,14 @@ class Planner():
         angle betwwen current location and North (bearing),
         the turning angle and speed
         """
-        print("Current location: [%1.8f, %1.8f]" % (self.currLocation[0], self.currLocation[1]))
+        print("Goal wait counter: %d" % self.goalWaitCounter)
+        print("Current waypoint: %d" % self.currWaypoint)
+        print(self.goalLocation[self.currWaypoint])
+        print(self.reachGoal)
+        # print("Current location: [%1.8f, %1.8f]" % (self.currLocation[0], self.currLocation[1]))
         # print("Previous location: [%1.8f, %1.8f]" % (self.prevLocation[0], self.prevLocation[1]))
 
-        print("Bearing (rad): %f | Steering: %f" % (self.bearing, self.steer_cmd))
+        # print("Bearing (rad): %f | Steering: %f" % (self.bearing, self.steer_cmd))
         print("Distance (m): %f | Throttle: %f" % (self.distance, self.throttle_cmd))
         return None
 
@@ -215,8 +234,6 @@ class Planner():
 # Methods useful for implementing planning algorithim
 def haversine(pointA, pointB):
     """
-    haversine()
-
     Method to calculate the (great circle) distance over a sphere with the haversine formula.
     Best for distances >1km. Otherwise computationally excessive.
     @params: two gps coordinates pointA and pointB (radians) defined by lat and long coordinates
