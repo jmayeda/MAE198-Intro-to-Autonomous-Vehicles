@@ -35,13 +35,14 @@ def drive(cfg, goalLocation):
 
     # GPS is a DK part that will poll GPS data from serial port
     # and output current location in radians.
-    gps = GPS()
+    gps = GPS(cfg.BAUD_RATE, cfg.PORT, cfg.TIMEOUT)
 
     # Planner is a DK part that calculates control signals to actuators based on current location
     # from GPS
-    planner = Planner(goalLocation=goalLocation, steer_gain=0.5, throttle_gain=1)
+    planner = Planner(goalLocation=goalLocation, steer_gain=cfg.STEERING_P_GAIN,
+                        throttle_gain=cfg.THROTTLE_P_GAIN)
 
-    # Actuators: steering and throttle 
+    # Actuators: steering and throttle
     steering_controller = PCA9685(cfg.STEERING_CHANNEL)
     steering = PWMSteering(controller=steering_controller,
                                     left_pulse=cfg.STEERING_LEFT_PWM,
@@ -63,9 +64,10 @@ def drive(cfg, goalLocation):
 
     V.start()
 
-if __name__ == '__main__':
-    # goalLocation = [0.5738778838, -2.0461111027] # bioengineering building
-    goalLocation = [0.5738857378, -2.0461065736] # bioengineering building
 
-    cfg = dk.load_config()
+if __name__ == '__main__':
+    # goalLocation is a list of lists: each sublist a waypoint for the controller.
+    goalLocation = [[32.8811271,-117.2342783], [32.8812414, -117.2374792]]
+
+    cfg = dk.load_config()  
     drive(cfg, goalLocation)
