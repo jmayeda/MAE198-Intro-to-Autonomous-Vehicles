@@ -1,6 +1,10 @@
 # MAE198-AutonomousVehicles
 Repo for MAE 198 Intro to Autonomous Vehicles (Winter 2018)
 
+Please see our wiki page for more details for the project.
+
+https://guitar.ucsd.edu/mae198/index.php/Project_gps
+
 ## Included Files
 
 **gps_manage.py** 
